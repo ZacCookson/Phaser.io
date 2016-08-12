@@ -10,10 +10,11 @@ game.load.image('stars', 'misc/starfield.jpg');
 
 game.load.spritesheet('ship', 'sprites/humstar.png', 32, 32);
 
-game.load.image('bullet', 'sprites/bullet')
+game.load.image('bullet', 'sprites/bullet');
 
 game.load.image('monster', 'sprites/shinyball.png');
 
+game.load.image('heart', 'sprites/carrot.png');
 }
 
 //Create
@@ -25,55 +26,111 @@ var nextFire = 0;  //my fire rate
 var fireRate = 50; //my fire rate
 
 var monsters;
-var numberOfMonsters = 10;
+var numberOfMonsters = 30;
 var speedOfMonsters = 50;
+var monsterSpeed = 150;
+var tolerance = 500;
 
-var tolerance;
+var numberOfLives = 5;
+var hearts;
+var lifetext;
 
 
 function create() {
 
-//this is to start the system
-game.world.setBounds(0,0, 1600, 1200);
-game.physics.startSystem(Phaser.Physics.P2JS);
-game.physics.p2.defaultRestitution = 0.9;
+    //this is to start the system
+    game.world.setBounds(0,0, 1600, 1200);
+    game.physics.startSystem(Phaser.Physics.P2JS);
+    game.physics.p2.defaultRestitution = 0.9;
+    
+    //add the bacground image starfield
+    starfield = game.add.tileSprite(0,0, 1200, 1200, 'stars');
+    starfield.fixedToCamera = true;
+    console.log(starfield);
+    
+    hearts = game.add.group();
+    hearts.fixedToCamera = true;
+    
+    lifeText = game.add.text(40, 30, 'Lives: ',{
+        font: '34px Arial',
+        fill: '#fff'
+    });
+    lifeText.fixedToCamera = true;
+    //hamster animations
+    ship = game.add.sprite(200,100, 'ship');
+    ship.scale.set(2);
+    ship.smoothed = false;
+    ship.animations.add('fly', [0,1,2,3,4,5], 10, true);
+    ship.play('fly');
+    
+    // activate the ship's Physics.
+    game.physics.enable(ship, Phaser.Physics.ARCADE);
+    game.camera.follow(ship);
+    ship.body.collideWorldBounds = true;
+    
+    //bullet physics.
+    bullets = game.add.group();
+    bullets.enableBody = true;
+    bullets.physicsBodyType = Phaser.Physics.ARCADE;
+    //Bullet detections
+    bullets.createMultiple(50, 'bullet');
+    bullets.setAll('checkWorldBounds', true);
+    bullets.setAll('outOfBoundsKill', true);
+    
+    //add monsters here
+    monsters = game.add.group();
+    monsters.enableBody = true;
+    monsters.physicsBodyType = Phaser.Physics.ARCADE;
+    
+    //create monsters here
+    createMonsters();
+    
+    //create how many lives you have
+    createLives();
 
-//add the bacground image starfield
-starfield = game.add.tileSprite(0,0, 800, 600, 'stars');
-starfield.fixedToCamera = true;
-console.log(starfield);
-//hamster animations
-ship = game.add.sprite(200,100, 'ship');
-ship.scale.set(2);
-ship.smoothed = false;
-ship.animations.add('fly', [0,1,2,3,4,5], 10, true);
-ship.play('fly');
-
-// activate the ship's Physics.
-game.physics.enable(ship, Phaser.Physics.ARCADE);
-game.camera.follow(ship);
-ship.body.collideWorldBounds = true;
-
-//bullet physics.
-bullets = game.add.group();
-bullets.enableBody = true;
-bullets.physicsBodyType = Phaser.Physics.ARCADE;
-//Bullet detections
-bullets.createMultiple(50, 'bullet');
-bullets.setAll('checkWorldBounds', true);
-bullets.setAll('outOfBoundsKill', true);
-
-//add monsters here
-monsters = game.add.group();
-monsters.enableBody = true;
-monsters.physicsBodyType = Phaser.Physics.ARCADE;
-
-//create monsters here
-createMonsters();
-
+    //game over stuff here
+    gameOverText = game.add.text(300,300, 'GAME OVER', {
+        font:'48px Arial',
+        fill: '#fff'
+    });
+    gameOverText.visible = false;
+    gameOverText.fixedToCamera = true;
 }
- 
-//  function createMonsters(){
+function start(){
+    game.time.reset();
+    hearts.callAll('revive');
+    monsters.removeAll();
+    //numberOfMOnsters = 30;
+    //monsterSpeed = 50
+    
+    createMonsters();
+    ship.revive();
+    
+    gameOverText.visible = false;
+}
+ function createLives(){
+     for(var i = 0; i < numberOfLives; i++){
+         var heart = hearts.create(250 - (30 * i), 40, 'heart');
+     }
+ }
+
+ function createMonsters(){
+    var count = 0;
+    var inverseTolerance = tolerance;
+    
+    while(count < numberOfMonsters){
+        inverseTolerance *= -1;
+        var randX = game.world.randomX + inverseTolerance;
+        var randY = game.world.randomY + inverseTolerance;
+        
+        //a < x === b (check if number is between range)
+        if(ship.position.x - tolerance < randX === randX < ship.position.x + tolerance){
+            continue;
+        }
+        count += 1;
+        var monster = monsters.create(randX, randY, 'monster');
+    }
+}
 
 
 //Update
@@ -90,14 +147,56 @@ function update() {
     //i want to shoot bullets from ship
     shipFireControls();
     
-   
+   // i want to detect if i hit something
+    collisionDetection();
     
-    
-    
-    
-    
+    //i want the monsters to move to me.
+    monsterMovement();
 }
+function monsterMovement(){
+    //get each monster to have the same AI
+    monsters.forEach(
+        function(singleMonster){
+            //move
+            game.physics.arcade.moveToObject(singleMonster, ship, monsterSpeed);
+        },
+        game.physics
+    );
+}
+    function shipHitMonster(theShip, monster){
+        //kill the monster first
+        monster.kill();
+        
+        
+        //destroy life
+        var heart = hearts.getFirstAlive();
+        //if out of lives display Game Over
+        if(heart){
+            heart.kill();
+        }
+        //its game over ...................wop wop.
+        if(hearts.countLiving() < 1){
+            theShip.kill();
+        
+        gameOverText.text = "GAME OVER";
+        gameOverText.visible = true;
+        
+        //let the player play again?
+        game.input.onTap.addOnce(start, this);
+        }
+    }
+    function bulletHitMonster(bullet, monster){
+        //when i use bullets to shoot monster, i destroy both objects
+        bullet.kill();
+        monster.kill();
+    }
+    function collisionDetection(){
+        //check to see if bullet hit monster
+        game.physics.arcade.overlap(bullets,monsters, bulletHitMonster, null, this);
     
+        //check if monster hits the ship
+        game.physics.arcade.overlap(ship, monsters, shipHitMonster, null, this);
+    }
     function fire(){
         if(game.time.now >nextFire && bullets.countDead() > 0){
             //my fire rate goes here
@@ -109,11 +208,7 @@ function update() {
             //speed of bullets to pointer
             game.physics.arcade.moveToPointer(bullet, 600);
         }
-        
-        
     }
-    
-    
     function shipFireControls(){
         //i want to use my mouse to aim and shoot
         game.physics.arcade.angleToPointer(ship);
@@ -123,13 +218,7 @@ function update() {
             //fire bullet
             fire();
         }
-        
-        
-        
     }
-    
-    
- 
  function moveBackground(){
      
      if(!game.camera.atLimit.x){
@@ -140,7 +229,6 @@ function update() {
          starfield.tilePosition.y -= (ship.body.velocity.y * game.time.physicsElapsed);
       }
  }
- 
 function movementControlsForShip(){
     //WASD Controls
     var wasdControls = {
@@ -166,29 +254,7 @@ function movementControlsForShip(){
     else if(wasdControls.down.isDown){
         ship.body.velocity.y = 400;
     }
-    
-   
 }
-createMonsters();
-function creatMonsters(){
-    
-    var count = 0;
-    var inverseTolerence = tolerance;
-    
-    while(count < numberOfMonsters){
-        inverseTolerance *= -1;
-        var randX = game.world.randomX + inverseTolerance;
-        var randY = game.world.randomY + inverseTolerance;
-        
-        
-        
-        //a < x === b (check if number is between range)
-        if(ship.position.x - tolerance < randX < ship.position.x + tolerance){
-            continue;
-        }
-        
-        count++;
-        var monster = monsters.create(randX, randY, 'monster');
-   
-    }
-}
+
+
+
